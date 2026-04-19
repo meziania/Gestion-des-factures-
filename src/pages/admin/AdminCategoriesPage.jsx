@@ -2,7 +2,6 @@ import React from 'react'
 import { useFormik } from 'formik'
 import * as yup from 'yup'
 import Alert from '@mui/material/Alert'
-import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
@@ -22,18 +21,14 @@ import Typography from '@mui/material/Typography'
 import AddIcon from '@mui/icons-material/Add'
 import EditIcon from '@mui/icons-material/Edit'
 import DeleteIcon from '@mui/icons-material/Delete'
-import { firebaseService } from '../services/firebaseService.js'
+import { jsonService } from '../../services/jsonService.js'
 
 const schema = yup.object({
   nom: yup.string().required('Nom requis'),
-  email: yup.string().email('Email invalide').required('Email requis'),
-  tel: yup.string(),
-  adresse: yup.string(),
+  tva: yup.number().min(0).max(1).required('TVA requise (0–1, ex. 0.2 pour 20 %)'),
 })
 
-const emptyValues = { nom: '', email: '', tel: '', adresse: '' }
-
-export default function ClientsPage() {
+export default function AdminCategoriesPage() {
   const [rows, setRows] = React.useState([])
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState(null)
@@ -41,17 +36,15 @@ export default function ClientsPage() {
   const [editingId, setEditingId] = React.useState(null)
 
   const load = React.useCallback(async () => {
-    if (!firebaseService.isConfigured()) {
-      setLoading(false)
-      setError('Firebase non configuré.')
-      return
-    }
     setError(null)
     try {
-      const list = await firebaseService.listClients()
-      setRows(list)
+      const c = await jsonService.listCategories()
+      setRows(Array.isArray(c) ? c : [])
     } catch (e) {
-      setError(e?.message || 'Erreur chargement clients')
+      setError(
+        e?.message ||
+          'Impossible de joindre JSON Server (npx json-server --watch db.json --port 3001)',
+      )
     } finally {
       setLoading(false)
     }
@@ -62,20 +55,15 @@ export default function ClientsPage() {
   }, [load])
 
   const formik = useFormik({
-    initialValues: emptyValues,
+    initialValues: { nom: '', tva: 0.2 },
     validationSchema: schema,
     enableReinitialize: true,
     onSubmit: async (values, { resetForm }) => {
       setError(null)
       try {
-        const payload = {
-          nom: values.nom.trim(),
-          email: values.email.trim(),
-          tel: values.tel?.trim() || '',
-          adresse: values.adresse?.trim() || '',
-        }
-        if (editingId) await firebaseService.updateClient(editingId, payload)
-        else await firebaseService.createClient(payload)
+        const payload = { nom: values.nom.trim(), tva: Number(values.tva) }
+        if (editingId != null) await jsonService.updateCategory(editingId, { ...payload, id: editingId })
+        else await jsonService.createCategory(payload)
         resetForm()
         setEditingId(null)
         setDialogOpen(false)
@@ -88,28 +76,23 @@ export default function ClientsPage() {
 
   const openCreate = () => {
     setEditingId(null)
-    formik.resetForm({ values: emptyValues })
+    formik.resetForm({ values: { nom: '', tva: 0.2 } })
     setDialogOpen(true)
   }
 
   const openEdit = (row) => {
     setEditingId(row.id)
     formik.resetForm({
-      values: {
-        nom: row.nom || '',
-        email: row.email || '',
-        tel: row.tel || '',
-        adresse: row.adresse || '',
-      },
+      values: { nom: row.nom || '', tva: row.tva ?? 0.2 },
     })
     setDialogOpen(true)
   }
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Supprimer ce client ?')) return
+    if (!window.confirm('Supprimer cette catégorie ?')) return
     setError(null)
     try {
-      await firebaseService.deleteClient(id)
+      await jsonService.deleteCategory(id)
       await load()
     } catch (e) {
       setError(e?.message || 'Erreur suppression')
@@ -119,9 +102,9 @@ export default function ClientsPage() {
   return (
     <Stack spacing={2}>
       <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems="center">
-        <Typography variant="h4">Clients</Typography>
+        <Typography variant="h4">Catégories</Typography>
         <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
-          Ajouter un client
+          Ajouter
         </Button>
       </Stack>
 
@@ -132,9 +115,7 @@ export default function ClientsPage() {
           <TableHead>
             <TableRow>
               <TableCell>Nom</TableCell>
-              <TableCell>Email</TableCell>
-              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Tél.</TableCell>
-              <TableCell sx={{ display: { xs: 'none', lg: 'table-cell' } }}>Adresse</TableCell>
+              <TableCell align="right">TVA</TableCell>
               <TableCell align="right" width={120}>
                 Actions
               </TableCell>
@@ -143,24 +124,22 @@ export default function ClientsPage() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={5}>Chargement…</TableCell>
+                <TableCell colSpan={3}>Chargement…</TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5}>Aucun client.</TableCell>
+                <TableCell colSpan={3}>Aucune catégorie.</TableCell>
               </TableRow>
             ) : (
               rows.map((r) => (
                 <TableRow key={r.id} hover>
                   <TableCell>{r.nom}</TableCell>
-                  <TableCell>{r.email}</TableCell>
-                  <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{r.tel}</TableCell>
-                  <TableCell sx={{ display: { xs: 'none', lg: 'table-cell' } }}>{r.adresse}</TableCell>
+                  <TableCell align="right">{Math.round(Number(r.tva) * 100)} %</TableCell>
                   <TableCell align="right">
-                    <IconButton size="small" aria-label="modifier" onClick={() => openEdit(r)}>
+                    <IconButton size="small" onClick={() => openEdit(r)} aria-label="modifier">
                       <EditIcon fontSize="small" />
                     </IconButton>
-                    <IconButton size="small" aria-label="supprimer" onClick={() => handleDelete(r.id)}>
+                    <IconButton size="small" onClick={() => handleDelete(r.id)} aria-label="supprimer">
                       <DeleteIcon fontSize="small" />
                     </IconButton>
                   </TableCell>
@@ -172,7 +151,7 @@ export default function ClientsPage() {
       </TableContainer>
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle>{editingId ? 'Modifier le client' : 'Nouveau client'}</DialogTitle>
+        <DialogTitle>{editingId != null ? 'Modifier la catégorie' : 'Nouvelle catégorie'}</DialogTitle>
         <form onSubmit={formik.handleSubmit}>
           <DialogContent>
             <Stack spacing={2} sx={{ pt: 1 }}>
@@ -185,37 +164,22 @@ export default function ClientsPage() {
                 error={formik.touched.nom && Boolean(formik.errors.nom)}
                 helperText={formik.touched.nom ? formik.errors.nom : ''}
                 fullWidth
-                required
               />
               <TextField
-                name="email"
-                label="Email"
-                type="email"
-                value={formik.values.email}
+                name="tva"
+                label="Taux TVA (décimal)"
+                type="number"
+                inputProps={{ step: '0.01', min: 0, max: 1 }}
+                value={formik.values.tva}
                 onChange={formik.handleChange}
                 onBlur={formik.handleBlur}
-                error={formik.touched.email && Boolean(formik.errors.email)}
-                helperText={formik.touched.email ? formik.errors.email : ''}
+                error={formik.touched.tva && Boolean(formik.errors.tva)}
+                helperText={
+                  formik.touched.tva
+                    ? formik.errors.tva
+                    : 'Ex. 0.2 = 20 %, 0.1 = 10 %, 0 = exonéré'
+                }
                 fullWidth
-                required
-              />
-              <TextField
-                name="tel"
-                label="Téléphone"
-                value={formik.values.tel}
-                onChange={formik.handleChange}
-                onBlur={formik.handleBlur}
-                fullWidth
-              />
-              <TextField
-                name="adresse"
-                label="Adresse"
-                value={formik.values.adresse}
-                onChange={formik.handleChange}
-                onBlur={formik.handleBlur}
-                fullWidth
-                multiline
-                minRows={2}
               />
             </Stack>
           </DialogContent>

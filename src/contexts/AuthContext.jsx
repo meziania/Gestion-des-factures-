@@ -1,67 +1,79 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
+import { firebaseService } from '../services/firebaseService.js'
 
 const AuthContext = createContext(null)
 
-const LS_KEY = 'gdf_auth_v1'
-
-function readLocalAuth() {
-  try {
-    const raw = localStorage.getItem(LS_KEY)
-    return raw ? JSON.parse(raw) : null
-  } catch {
-    return null
-  }
-}
-
-function writeLocalAuth(value) {
-  try {
-    if (!value) localStorage.removeItem(LS_KEY)
-    else localStorage.setItem(LS_KEY, JSON.stringify(value))
-  } catch {
-    // ignore
-  }
-}
-
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
-  const [role, setRole] = useState('user') // user | admin
+  const [role, setRole] = useState('user')
   const [loading, setLoading] = useState(true)
 
+  const firebaseReady = firebaseService.isConfigured()
+
   useEffect(() => {
-    const existing = readLocalAuth()
-    if (existing?.user) {
-      setUser(existing.user)
-      setRole(existing.role || 'user')
+    if (!firebaseReady) {
+      setLoading(false)
+      return undefined
     }
-    setLoading(false)
+
+    const unsub = firebaseService.subscribeAuthState(async (firebaseUser) => {
+      if (!firebaseUser) {
+        setUser(null)
+        setRole('user')
+        setLoading(false)
+        return
+      }
+      try {
+        const r = await firebaseService.getUserRole(firebaseUser.uid)
+        setUser({ uid: firebaseUser.uid, email: firebaseUser.email })
+        setRole(r)
+      } catch {
+        setUser({ uid: firebaseUser.uid, email: firebaseUser.email })
+        setRole('user')
+      }
+      setLoading(false)
+    })
+
+    return () => unsub()
+  }, [firebaseReady])
+
+  const login = useCallback(async ({ email, password }) => {
+    if (!firebaseService.isConfigured()) {
+      throw new Error('Firebase non configuré. Ajoutez les variables VITE_FIREBASE_* dans .env')
+    }
+    await firebaseService.signInWithEmail(email.trim(), password)
   }, [])
 
-  const login = async ({ email, password }) => {
-    if (!email || !password) throw new Error('Email et mot de passe requis')
+  const register = useCallback(async ({ email, password }) => {
+    if (!firebaseService.isConfigured()) {
+      throw new Error('Firebase non configuré. Ajoutez les variables VITE_FIREBASE_* dans .env')
+    }
+    await firebaseService.signUpWithEmail(email.trim(), password)
+  }, [])
 
-    const nextRole = email.toLowerCase().includes('admin') ? 'admin' : 'user'
-    const nextUser = { uid: email, email }
-
-    setUser(nextUser)
-    setRole(nextRole)
-    writeLocalAuth({ user: nextUser, role: nextRole })
-  }
-
-  const logout = async () => {
-    setUser(null)
-    setRole('user')
-    writeLocalAuth(null)
-  }
+  const logout = useCallback(async () => {
+    if (!firebaseService.isConfigured()) return
+    await firebaseService.signOut()
+  }, [])
 
   const value = useMemo(
     () => ({
       user,
       role,
       loading,
+      firebaseReady,
       login,
+      register,
       logout,
     }),
-    [user, role, loading],
+    [user, role, loading, firebaseReady, login, register, logout],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
@@ -72,4 +84,3 @@ export function useAuth() {
   if (!ctx) throw new Error('useAuth must be used within AuthProvider')
   return ctx
 }
-

@@ -19,20 +19,24 @@ const schema = yup.object({
     .string()
     .min(6, 'Minimum 6 caractères (exigence Firebase)')
     .required('Mot de passe requis'),
+  confirm: yup
+    .string()
+    .oneOf([yup.ref('password')], 'Les mots de passe ne correspondent pas')
+    .required('Confirmation requise'),
 })
 
-export default function LoginPage() {
-  const { login, firebaseReady } = useAuth()
+export default function RegisterPage() {
+  const { register, firebaseReady } = useAuth()
   const navigate = useNavigate()
   const [error, setError] = React.useState(null)
 
   const formik = useFormik({
-    initialValues: { email: '', password: '' },
+    initialValues: { email: '', password: '', confirm: '' },
     validationSchema: schema,
     onSubmit: async (values) => {
       setError(null)
       try {
-        await login(values)
+        await register({ email: values.email, password: values.password })
         navigate('/dashboard', { replace: true })
       } catch (e) {
         setError(mapFirebaseAuthError(e))
@@ -45,16 +49,16 @@ export default function LoginPage() {
       <Card sx={{ width: 'min(520px, 100%)' }}>
         <CardContent>
           <Stack spacing={2}>
-            <Typography variant="h5">Connexion</Typography>
+            <Typography variant="h5">Créer un compte</Typography>
             <Typography variant="body2" color="text.secondary">
-              Même identifiant pour tous : le <strong>rôle</strong> (utilisateur ou administrateur)
-              est lu après connexion dans la Realtime Database (<code>users/&lt;uid&gt;/role</code>).
-              Cela détermine l’accès à l’espace comptable ou à l’espace admin.
+              Un document <code>users/&lt;uid&gt;</code> sera créé dans la Realtime Database avec le
+              rôle <code>user</code>. Pour promouvoir un admin, modifiez{' '}
+              <code>users/&lt;uid&gt;/role</code> à <code>admin</code> dans la console Firebase.
             </Typography>
             {!firebaseReady ? (
               <Alert severity="warning">
-                Variables Firebase manquantes. Copiez <code>.env.example</code> vers{' '}
-                <code>.env</code> et renseignez <code>VITE_FIREBASE_*</code>.
+                Variables Firebase manquantes. Configurez <code>.env</code> (voir{' '}
+                <code>.env.example</code>).
               </Alert>
             ) : null}
             {error ? <Alert severity="error">{error}</Alert> : null}
@@ -81,15 +85,27 @@ export default function LoginPage() {
                   onBlur={formik.handleBlur}
                   error={formik.touched.password && Boolean(formik.errors.password)}
                   helperText={formik.touched.password ? formik.errors.password : ''}
-                  autoComplete="current-password"
+                  autoComplete="new-password"
+                  fullWidth
+                />
+                <TextField
+                  label="Confirmer le mot de passe"
+                  name="confirm"
+                  type="password"
+                  value={formik.values.confirm}
+                  onChange={formik.handleChange}
+                  onBlur={formik.handleBlur}
+                  error={formik.touched.confirm && Boolean(formik.errors.confirm)}
+                  helperText={formik.touched.confirm ? formik.errors.confirm : ''}
+                  autoComplete="new-password"
                   fullWidth
                 />
                 <Button type="submit" variant="contained" size="large" disabled={!firebaseReady}>
-                  Se connecter
+                  S&apos;inscrire
                 </Button>
                 <Typography variant="body2" align="center">
-                  <Button component={RouterLink} to="/register" size="small">
-                    Créer un compte
+                  <Button component={RouterLink} to="/login" size="small">
+                    Déjà un compte ? Connexion
                   </Button>
                 </Typography>
               </Stack>

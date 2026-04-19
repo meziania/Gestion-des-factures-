@@ -19,6 +19,7 @@
     "@emotion/styled": "^11.14.1",
     "@mui/icons-material": "^9.0.0",
     "@mui/material": "^9.0.0",
+    "axios": "^1.15.1",
     "firebase": "^12.12.0",
     "formik": "^2.4.9",
     "jspdf": "^4.2.1",

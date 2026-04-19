@@ -1,5 +1,12 @@
 import { initializeApp, getApps } from 'firebase/app'
 import {
+  getAuth,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+} from 'firebase/auth'
+import {
   getDatabase,
   push,
   ref,
@@ -32,9 +39,23 @@ function ensureApp() {
   return initializeApp(cfg)
 }
 
+function ensureAuth() {
+  const app = ensureApp()
+  if (!app) {
+    throw new Error(
+      'Firebase non configuré. Créez un fichier .env avec VITE_FIREBASE_API_KEY, VITE_FIREBASE_DATABASE_URL, VITE_FIREBASE_PROJECT_ID, etc.',
+    )
+  }
+  return getAuth(app)
+}
+
 function ensureDb() {
   const app = ensureApp()
-  if (!app) throw new Error('Firebase non configuré. Renseignez VITE_FIREBASE_* dans .env')
+  if (!app) {
+    throw new Error(
+      'Firebase non configuré. Renseignez les variables VITE_FIREBASE_* dans .env',
+    )
+  }
   return getDatabase(app)
 }
 
@@ -45,7 +66,52 @@ async function readList(path) {
   return Object.entries(val).map(([id, data]) => ({ id, ...data }))
 }
 
+/** Rôle stocké dans Realtime Database : users/{uid}/role = "admin" | "user" */
+async function getUserRole(uid) {
+  const db = ensureDb()
+  const snap = await get(child(ref(db), `users/${uid}`))
+  const val = snap.val()
+  if (!val) return 'user'
+  return val.role === 'admin' ? 'admin' : 'user'
+}
+
+/** Crée le document utilisateur à l’inscription (rôle par défaut : user). */
+async function ensureUserProfile(uid, email) {
+  const db = ensureDb()
+  const userRef = ref(db, `users/${uid}`)
+  const snap = await get(userRef)
+  if (snap.val()) return
+  await set(userRef, {
+    email,
+    role: 'user',
+    createdAt: Date.now(),
+  })
+}
+
 export const firebaseService = {
+  isConfigured: () => Boolean(getFirebaseConfig()),
+
+  /** Connexion Email / Mot de passe (Authentication) */
+  signInWithEmail: (email, password) =>
+    signInWithEmailAndPassword(ensureAuth(), email, password),
+
+  /** Inscription Email / Mot de passe + entrée dans Realtime DB `users/` */
+  signUpWithEmail: async (email, password) => {
+    const cred = await createUserWithEmailAndPassword(ensureAuth(), email, password)
+    await ensureUserProfile(cred.user.uid, cred.user.email || email)
+    return cred
+  },
+
+  signOut: () => signOut(ensureAuth()),
+
+  /** Écoute les changements de session Firebase Auth */
+  subscribeAuthState: (callback) => {
+    const auth = ensureAuth()
+    return onAuthStateChanged(auth, callback)
+  },
+
+  getUserRole,
+
   listClients: () => readList('clients'),
   createClient: async (data) => {
     const db = ensureDb()
@@ -82,4 +148,3 @@ export const firebaseService = {
     return true
   },
 }
-
